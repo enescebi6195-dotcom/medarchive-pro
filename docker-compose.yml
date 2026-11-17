@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: medarchive
+      POSTGRES_USER: medarchive
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [mednet]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medarchive -d medarchive"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build: ./backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://medarchive:${POSTGRES_PASSWORD}@db:5432/medarchive
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?Set ADMIN_INITIAL_PASSWORD in .env}
+      FILES_DIR: /app/files
+      MAX_UPLOAD_MB: "500"
+    volumes:
+      - filedata:/app/files
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [mednet]
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    restart: always
+    networks: [mednet]
+
+  nginx:
+    image: nginx:alpine
+    restart: always
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+      - frontend
+    networks: [mednet]
+
+volumes:
+  pgdata:
+  filedata:
+
+networks:
+  mednet:
+    driver: bridge
